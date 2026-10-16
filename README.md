@@ -8,7 +8,14 @@ Gioco "F1 Pong Grand Prix" — una versione stilizzata di Pong con monoposto F1,
 - Pulsanti HUD: Pausa / Riavvia.
 - Selettore difficoltà CPU (Facile / Normale / Difficile).
 - Suoni semplici via WebAudio (effetti su rimbalzo, colpo, punto e vittoria).
-- Salvataggio punteggi totali (vittorie) in `localStorage`.
+- Salvato vittorie totali in `localStorage`.
+- Corretto posizionamento del canvas per evitare che venga coperto dal tabellone e per prevenire ritagli su schermi piccoli.
+- Sostituito l'uso di alert() con una finestra modale personalizzata per rimuovere la dicitura del browser.
+
+### Problemi risolti
+- Canvas tagliato su alcuni schermi: ora la pagina scorre se necessario e il canvas è centrato.
+- Audio su iOS: introduzione di un 'unlock' audio su primo gesto utente (click/touch), richiesto da iOS per attivare WebAudio.
+- Messaggi fine partita: rimpiazzati con modal interno (nessun "umbyone.github.io says").
 
 ### Controlli
 - Giocatore sinistro (TEAM ROSSO): `W` (su) / `S` (giù) oppure tocca il lato sinistro sul touch.
@@ -20,10 +27,10 @@ Gioco "F1 Pong Grand Prix" — una versione stilizzata di Pong con monoposto F1,
 1. Apri `index.html` in un browser moderno.
 2. Se vuoi condividerlo pubblicamente, puoi abilitare GitHub Pages sulla branch `main` (Settings → Pages) e selezionare la root `/`.
 
-### Possibili miglioramenti futuri
-- Aggiungere audio più ricco (file), musica di sottofondo e mute toggle.
+### Prossimi miglioramenti possibili
+- Aggiungere audio/FX su file esterni + mute toggle.
 - Migliorare la rete / modalità multiplayer online.
-- Migliorare salvataggio dello stato per riprendere partite.
-- Aggiungere effetti grafici avanzati (post-processing, shader) o sprite migliori.
+- Migliorare accessibilità (contrasto, istruzioni visibili, focus keyboard).
+- Inserire assets (sprite, icon) e ottimizzare le risorse.
 
 Buon divertimento!

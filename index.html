@@ -15,7 +15,8 @@
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            overflow: hidden;
+            overflow: auto; /* allow page to scroll on small screens to avoid cropping */
+            padding-bottom: 24px;
         }
         h1 {
             margin: 5px 0;
@@ -31,14 +32,14 @@
             gap: 60px;
             font-size: 24px;
             font-weight: bold;
-            margin-bottom: 0;
+            margin-bottom: 10px;
             background: linear-gradient(180deg, #3a3a3a 0%, #1c1c1c 100%);
             padding: 10px 30px;
             border-radius: 8px;
             border: 2px solid #555;
             box-shadow: 0 6px 0 #0d0d0d, 0 10px 20px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.15);
             position: relative;
-            z-index: 2;
+            z-index: 3;
         }
         .team-red { color: #ff3333; text-shadow: 0 0 10px rgba(255,50,50,0.6), 2px 2px 0 #000; }
         .team-orange { color: #ff8c1a; text-shadow: 0 0 10px rgba(255,140,26,0.6), 2px 2px 0 #000; }
@@ -46,7 +47,10 @@
         .stage {
             perspective: 1100px;
             perspective-origin: 50% 0%;
-            margin-top: -10px;
+            margin-top: 12px; /* push stage down so scoreboard doesn't cover it */
+            width: 100%;
+            display: flex;
+            justify-content: center;
         }
         .track {
             position: relative;
@@ -74,9 +78,10 @@
             box-shadow: 0 40px 60px rgba(0,0,0,0.85);
             max-width: 96vw;
             height: auto;
+            margin: 0 auto; /* center canvas */
         }
         .controls {
-            margin-top: -40px;
+            margin-top: 12px;
             font-size: 14px;
             color: #aaa;
             text-align: center;
@@ -100,7 +105,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            z-index: 10;
+            z-index: 11;
         }
         #menu.hidden { display: none; }
         .menu-box {
@@ -151,11 +156,30 @@
         .hud button:active { transform: translateY(2px); box-shadow:0 2px 0 rgba(0,0,0,0.6); }
 
         .subtitle { font-size:12px; color:#bbb; display:block; margin-top:4px; }
+
+        /* Winner modal (replaces alert) */
+        .modal {
+            position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; z-index: 20;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+        }
+        .modal.hidden { display: none; }
+        .modal-box {
+            background: linear-gradient(180deg,#222,#111); padding: 24px 28px; border-radius: 10px; border: 1px solid #444; text-align:center; color:#fff; box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+        }
+        .modal-box h3 { margin: 0 0 8px; font-size:20px; }
+        .modal-box p { margin: 0 0 16px; color:#ddd; }
+        .modal-box button { margin: 0 6px; }
+
+        @media (max-width: 420px) {
+            #scoreboard { gap: 18px; font-size: 18px; padding: 8px 14px; }
+            .mode-btn { width: 88%; }
+            .hud { right: 8px; bottom: 8px; }
+        }
     </style>
 </head>
 <body>
     <h1>🏎️ F1 PONG GRAND PRIX 🏁</h1>
-    <div id="scoreboard">
+    <div id="scoreboard" role="status" aria-live="polite">
         <span class="team-red">TEAM ROSSO: <span id="scoreLeft">0</span> <small id="winsLeft" class="subtitle"></small></span>
         <span class="team-orange">TEAM ORANGE: <span id="scoreRight">0</span> <small id="winsRight" class="subtitle"></small></span>
     </div>
@@ -187,6 +211,19 @@
             <button class="mode-btn cpu" onclick="startGame('cpu')">🤖 Umano vs Computer<small>Tu guidi il Rosso (W/S), il Computer guida l'Orange</small></button>
         </div>
     </div>
+
+    <!-- Winner modal replaces alert() so there is no browser prefix text -->
+    <div id="winnerModal" class="modal hidden" role="dialog" aria-modal="true">
+        <div class="modal-box">
+            <h3 id="winnerTitle">VINCITORE</h3>
+            <p id="winnerText">Team Rosso ha vinto!</p>
+            <div>
+                <button id="closeWinner">Chiudi</button>
+                <button id="restartWinner">Riavvia</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const canvas = document.getElementById("gameCanvas");
         const ctx = canvas.getContext("2d");
@@ -230,9 +267,20 @@
         // Audio (WebAudio) per effetti semplici
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
+        function initAudio() {
+            try {
+                if (!audioCtx) audioCtx = new AudioCtx();
+                if (audioCtx.state === 'suspended') return audioCtx.resume();
+            } catch (e) { /* ignore */ }
+            return Promise.resolve();
+        }
         function playBeep(freq = 440, time = 0.05, type = 'sine', gain = 0.07) {
             try {
                 if (!audioCtx) audioCtx = new AudioCtx();
+                if (audioCtx.state === 'suspended') {
+                    // don't try to auto-resume here; resume must come from user gesture
+                    return;
+                }
                 const o = audioCtx.createOscillator();
                 const g = audioCtx.createGain();
                 o.type = type; o.frequency.value = freq;
@@ -243,6 +291,16 @@
                 o.stop(audioCtx.currentTime + time);
             } catch (e) { /* ignore on browsers without audio */ }
         }
+
+        // unlock audio on first user gesture (for iOS)
+        function unlockAudioOnGesture() {
+            if (!audioCtx) audioCtx = new AudioCtx();
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(()=>{});
+            }
+        }
+        // ensure we attach a one-time gesture listener so iOS will allow sound
+        window.addEventListener('pointerdown', () => { unlockAudioOnGesture(); }, { once: true });
 
         // Intelligenza artificiale della monoposto Orange
         function updateCPU() {
@@ -538,19 +596,38 @@
             }
         }
 
+        // custom modal to show winner so there is no "umbyone.github.io says" prefix
+        const winnerModal = document.getElementById('winnerModal');
+        const winnerText = document.getElementById('winnerText');
+        const closeWinner = document.getElementById('closeWinner');
+        const restartWinner = document.getElementById('restartWinner');
+
+        closeWinner.addEventListener('click', () => { winnerModal.classList.add('hidden'); });
+        restartWinner.addEventListener('click', () => {
+            winnerModal.classList.add('hidden');
+            scoreLeft = 0; scoreRight = 0; document.getElementById('scoreLeft').innerText = 0; document.getElementById('scoreRight').innerText = 0;
+            resetBall(Math.random() > 0.5 ? 1 : -1); running = true; paused = false;
+        });
+
+        function showWinner(message) {
+            winnerText.innerText = message;
+            winnerModal.classList.remove('hidden');
+            running = false;
+        }
+
         function checkWinner() {
             if (scoreLeft >= maxScore) {
-                alert("🏆 IL TEAM ROSSO VINCE IL GRAN PREMIO!");
+                const msg = "🏆 IL TEAM ROSSO VINCE IL GRAN PREMIO!";
                 const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"left":0,"right":0}'); s.left = (s.left || 0) + 1; localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
                 document.getElementById('winsLeft').innerText = 'Totali: ' + s.left;
                 playBeep(1200, 0.3, 'sawtooth', 0.18);
-                running = false;
+                showWinner(msg);
             } else if (scoreRight >= maxScore) {
-                alert(gameMode === "cpu" ? "🤖 IL COMPUTER (TEAM ORANGE) VINCE IL GRAN PREMIO!" : "🏆 IL TEAM ORANGE VINCE IL GRAN PREMIO!");
+                const msg = (gameMode === "cpu") ? "🤖 IL COMPUTER (TEAM ORANGE) VINCE IL GRAN PREMIO!" : "🏆 IL TEAM ORANGE VINCE IL GRAN PREMIO!";
                 const s = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{"left":0,"right":0}'); s.right = (s.right || 0) + 1; localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
                 document.getElementById('winsRight').innerText = 'Totali: ' + s.right;
                 playBeep(400, 0.3, 'sawtooth', 0.18);
-                running = false;
+                showWinner(msg);
             }
         }
 
@@ -630,7 +707,6 @@
             if (level === 'easy') { cpuSpeed = carSpeed * 0.6; speedMultiplier = 1.06; }
             else if (level === 'hard') { cpuSpeed = carSpeed * 0.9; speedMultiplier = 1.16; }
             else { cpuSpeed = cpuSpeedBase; speedMultiplier = 1.12; }
-            // cpu error amplitude: easier -> larger error
             if (level === 'easy') cpuError = (Math.random() - 0.5) * carLength * 1.2;
             else if (level === 'hard') cpuError = (Math.random() - 0.5) * carLength * 0.25;
             else cpuError = (Math.random() - 0.5) * carLength * 0.8;
@@ -646,6 +722,8 @@
             resizeCanvas();
             resetBall(Math.random() > 0.5 ? 1 : -1);
             running = true; paused = false; pauseBtn.innerText = 'Pausa';
+            // unlock audio on user gesture (this click is a user gesture, helps iOS resume audio)
+            initAudio().then(()=>{ unlockAudioOnGesture(); }).catch(()=>{});
         }
 
         // Initialize
